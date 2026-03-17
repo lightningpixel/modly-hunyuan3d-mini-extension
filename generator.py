@@ -34,7 +34,8 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
 
     def is_downloaded(self) -> bool:
         subfolder = self.download_check if self.download_check else _SUBFOLDER
-        return (self.model_dir / subfolder).exists()
+        model_dir = self.model_dir / subfolder
+        return model_dir.exists() and (model_dir / "model.fp16.safetensors").exists()
 
     def load(self) -> None:
         if self._model is not None:
