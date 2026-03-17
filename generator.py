@@ -1,12 +1,5 @@
 """
-Hunyuan3DMiniGenerator — adapter pour Hunyuan3D-2mini (tencent/Hunyuan3D-2mini).
-
-Cible    : PC grand public, ≥6 GB VRAM (shape-only).
-Modèle   : 0.6B paramètres (vs 3.3B pour la 2.1), rapide, léger.
-Pipeline : image → rembg → DiT flow-matching → GLB
-Package  : hy3dgen (github.com/Tencent/Hunyuan3D-2, ≠ hy3dshape de la v2.1)
-
-Référence : https://huggingface.co/tencent/Hunyuan3D-2mini
+Reference : https://huggingface.co/tencent/Hunyuan3D-2mini
 """
 import io
 import os
