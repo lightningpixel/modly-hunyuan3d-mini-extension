@@ -1,0 +1,124 @@
+name: Build prebuilt C++ extensions
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-prebuilt.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tag: win-amd64-cp311
+            python: '3.11'
+          - os: ubuntu-22.04
+            tag: linux-amd64-cp311
+            python: '3.11'
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.19
+        with:
+          cuda: '12.6.3'
+          method: network
+
+      - name: Install PyTorch (CUDA 12.6)
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+      - name: Install build dependencies
+        run: pip install setuptools wheel ninja pybind11
+
+      - name: Download hy3dgen source
+        shell: bash
+        run: |
+          curl -L -o hy3dgen.zip https://github.com/Tencent/Hunyuan3D-2/archive/refs/heads/main.zip
+          python -c "
+          import zipfile, os
+          with zipfile.ZipFile('hy3dgen.zip') as z:
+              for f in z.namelist():
+                  if '/hy3dgen/texgen/' in f:
+                      # Extract preserving only the hy3dgen/texgen/ subtree
+                      rel = f.split('/hy3dgen/texgen/', 1)
+                      if len(rel) == 2:
+                          target = os.path.join('hy3dgen_src', 'texgen', rel[1])
+                          if f.endswith('/'):
+                              os.makedirs(target, exist_ok=True)
+                          else:
+                              os.makedirs(os.path.dirname(target), exist_ok=True)
+                              with z.open(f) as src, open(target, 'wb') as dst:
+                                  dst.write(src.read())
+          "
+
+      - name: Build custom_rasterizer
+        shell: bash
+        run: |
+          cd hy3dgen_src/texgen/custom_rasterizer
+          pip install . --no-build-isolation 2>&1 | tail -20
+
+      - name: Build differentiable_renderer
+        shell: bash
+        run: |
+          cd hy3dgen_src/texgen/differentiable_renderer
+          pip install . --no-build-isolation 2>&1 | tail -20
+
+      - name: Collect compiled binaries
+        shell: python
+        run: |
+          import sysconfig, shutil, os, glob
+
+          tag = "${{ matrix.tag }}"
+          out = os.path.join("prebuilt", tag)
+          os.makedirs(out, exist_ok=True)
+
+          site = sysconfig.get_path("purelib")
+
+          # Copy custom_rasterizer package (Python + compiled .pyd/.so)
+          cr_src = os.path.join(site, "custom_rasterizer")
+          if os.path.isdir(cr_src):
+              shutil.copytree(cr_src, os.path.join(out, "custom_rasterizer"), dirs_exist_ok=True)
+
+          # Copy any top-level compiled kernel files
+          for pattern in ["custom_rasterizer_kernel*", "mesh_processor*"]:
+              for f in glob.glob(os.path.join(site, pattern)):
+                  shutil.copy2(f, out)
+
+          # Copy differentiable_renderer if it produces importable modules
+          dr_src = os.path.join(site, "differentiable_renderer")
+          if os.path.isdir(dr_src):
+              shutil.copytree(dr_src, os.path.join(out, "differentiable_renderer"), dirs_exist_ok=True)
+
+          # Also check for compiled .so/.pyd in platlib
+          platlib = sysconfig.get_path("platlib")
+          if platlib != site:
+              for pattern in ["custom_rasterizer*", "mesh_processor*", "differentiable_renderer*"]:
+                  for f in glob.glob(os.path.join(platlib, pattern)):
+                      if os.path.isdir(f):
+                          shutil.copytree(f, os.path.join(out, os.path.basename(f)), dirs_exist_ok=True)
+                      else:
+                          shutil.copy2(f, out)
+
+          print(f"Collected prebuilt binaries in {out}:")
+          for root, dirs, files in os.walk(out):
+              for f in files:
+                  path = os.path.join(root, f)
+                  size = os.path.getsize(path)
+                  print(f"  {os.path.relpath(path, out)} ({size} bytes)")
+
+      - name: Upload prebuilt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.tag }}
+          path: prebuilt/${{ matrix.tag }}/
+          retention-days: 90
