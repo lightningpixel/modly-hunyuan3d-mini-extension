@@ -64,15 +64,6 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
         self._model = pipeline
         print(f"[Hunyuan3DMiniGenerator] Loaded on {device}.")
 
-    def unload(self) -> None:
-        super().unload()
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass
-
     # ------------------------------------------------------------------ #
     # Inference
     # ------------------------------------------------------------------ #
@@ -196,18 +187,71 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
 
     def _check_texgen_extensions(self) -> None:
         try:
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline  # noqa: F401
-        except (ImportError, OSError) as exc:
+            import custom_rasterizer  # noqa: F401
+            return
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+        # 1. Try prebuilt binaries bundled in the extension repo
+        self._inject_prebuilt_extensions()
+        try:
+            import custom_rasterizer  # noqa: F401
+            return
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+        # 2. Fall back to auto-compile from source
+        print("[Hunyuan3DMiniGenerator] No prebuilt binary found, attempting auto-compile…")
+        try:
+            self._compile_texgen_extensions()
+        except Exception as exc:
             base = self.model_dir / "_hy3dgen" / "hy3dgen" / "texgen"
             raise RuntimeError(
-                "C++ extensions for texture generation are not compiled.\n"
-                "Build them with:\n\n"
+                "C++ extensions for texture generation are missing and could not be compiled.\n"
+                "Try building them manually:\n\n"
                 f"  cd \"{base / 'custom_rasterizer'}\"\n"
-                f"  python setup.py install\n\n"
+                f"  pip install . --no-build-isolation\n\n"
                 f"  cd \"{base / 'differentiable_renderer'}\"\n"
-                f"  python setup.py install\n\n"
-                f"Original error: {exc}"
+                f"  pip install . --no-build-isolation\n\n"
+                f"Error: {exc}"
             ) from exc
+
+    @staticmethod
+    def _platform_tag() -> str:
+        import platform
+        os_tag = {"win32": "win", "linux": "linux", "darwin": "macos"}[sys.platform]
+        arch = platform.machine().lower().replace("x86_64", "amd64").replace("aarch64", "arm64")
+        return f"{os_tag}-{arch}-cp{sys.version_info.major}{sys.version_info.minor}"
+
+    def _inject_prebuilt_extensions(self) -> None:
+        """Add the platform-specific prebuilt/ folder to sys.path if it exists."""
+        tag = self._platform_tag()
+        prebuilt = Path(__file__).parent / "prebuilt" / tag
+        if prebuilt.exists() and str(prebuilt) not in sys.path:
+            sys.path.insert(0, str(prebuilt))
+            print(f"[Hunyuan3DMiniGenerator] Injected prebuilt extensions from {prebuilt}")
+
+    def _compile_texgen_extensions(self) -> None:
+        import subprocess
+        texgen_base = self.model_dir / "_hy3dgen" / "hy3dgen" / "texgen"
+
+        for ext_name in ("custom_rasterizer", "differentiable_renderer"):
+            ext_dir = texgen_base / ext_name
+            if not ext_dir.exists():
+                raise RuntimeError(f"Extension source not found: {ext_dir}")
+
+            print(f"[Hunyuan3DMiniGenerator] Compiling {ext_name}…")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", ".", "--no-build-isolation"],
+                cwd=str(ext_dir),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Compilation of {ext_name} failed:\n{result.stderr[-3000:]}"
+                )
+            print(f"[Hunyuan3DMiniGenerator] {ext_name} compiled and installed.")
 
     def _ensure_paint_weights(self) -> None:
         paint_dir = self.model_dir / "_paint_weights"
