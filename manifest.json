@@ -52,5 +52,50 @@
       "description": "Maximum speed, reduced detail"
     }
   ],
+  "params_schema": [
+    {
+      "id": "num_inference_steps",
+      "label": "Quality",
+      "type": "select",
+      "default": 30,
+      "options": [
+        { "value": 10, "label": "Fast" },
+        { "value": 30, "label": "Balanced" },
+        { "value": 50, "label": "High" }
+      ],
+      "tooltip": "Number of diffusion steps. More steps = better quality but slower."
+    },
+    {
+      "id": "octree_resolution",
+      "label": "Mesh Resolution",
+      "type": "select",
+      "default": 380,
+      "options": [
+        { "value": 256, "label": "Low" },
+        { "value": 380, "label": "Medium" },
+        { "value": 512, "label": "High" }
+      ],
+      "tooltip": "Octree resolution for mesh reconstruction. Higher = more detail but slower and more VRAM."
+    },
+    {
+      "id": "guidance_scale",
+      "label": "Guidance Scale",
+      "type": "float",
+      "default": 5.5,
+      "min": 1.0,
+      "max": 10.0,
+      "step": 0.5,
+      "tooltip": "Classifier-free guidance strength. Higher = closer to the input image."
+    },
+    {
+      "id": "seed",
+      "label": "Seed",
+      "type": "int",
+      "default": 42,
+      "min": 0,
+      "max": 2147483647,
+      "tooltip": "Seed for reproducibility. Click shuffle for a random seed."
+    }
+  ],
   "signature": "qIDfeLne63o1tFEkfaWCSNj6rGdQ5naQqHf7hX2ZOf5Z+1V8LCx1NvEYHvHVG0pXEgG4GQojC5+ZZUqG8hW1Cw=="
 }

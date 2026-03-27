@@ -59,6 +59,8 @@ def setup(python_exe: str, ext_dir: Path, gpu_sm: int) -> None:
         "Pillow",
         "numpy",
         "trimesh",
+        "pymeshlab",
+        "opencv-python-headless",
         "huggingface_hub",
         "diffusers>=0.31.0",
         "transformers>=4.46.0",
