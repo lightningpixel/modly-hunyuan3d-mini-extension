@@ -111,7 +111,7 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
         try:
             with torch.no_grad():
                 import torch
-                generator = torch.Generator().manual_seed(seed) if seed >= 0 else None
+                generator = torch.Generator().manual_seed(seed)
                 outputs = self._model(
                     image=image,
                     num_inference_steps=num_steps,
@@ -155,7 +155,13 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
 
     def _preprocess(self, image_bytes: bytes) -> Image.Image:
         import rembg
-        return rembg.remove(Image.open(io.BytesIO(image_bytes))).convert("RGBA")
+        img = Image.open(io.BytesIO(image_bytes))
+        try:
+            return rembg.remove(img).convert("RGBA")
+        except Exception:
+            # cuDNN/CUDA incompatibility — fall back to CPU
+            session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
+            return rembg.remove(img, session=session).convert("RGBA")
 
     def _run_texture(self, mesh, image: "Image.Image", progress_cb=None):
         import torch
@@ -314,10 +320,11 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
                 "type":    "select",
                 "default": 30,
                 "options": [
-                    {"value": 10, "label": "Fast (10 steps)"},
-                    {"value": 30, "label": "Balanced (30 steps)"},
-                    {"value": 50, "label": "High (50 steps)"},
+                    {"value": 10, "label": "Fast"},
+                    {"value": 30, "label": "Balanced"},
+                    {"value": 50, "label": "High"},
                 ],
+                "tooltip": "Number of diffusion steps. More steps = better quality but slower.",
             },
             {
                 "id":      "octree_resolution",
@@ -325,10 +332,11 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
                 "type":    "select",
                 "default": 380,
                 "options": [
-                    {"value": 256, "label": "Low (256)"},
-                    {"value": 380, "label": "Medium (380)"},
-                    {"value": 512, "label": "High (512)"},
+                    {"value": 256, "label": "Low"},
+                    {"value": 380, "label": "Medium"},
+                    {"value": 512, "label": "High"},
                 ],
+                "tooltip": "Octree resolution for mesh reconstruction. Higher = more detail but slower and more VRAM.",
             },
             {
                 "id":      "guidance_scale",
@@ -337,13 +345,16 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
                 "default": 5.5,
                 "min":     1.0,
                 "max":     10.0,
+                "step":    0.5,
+                "tooltip": "Classifier-free guidance strength. Higher = closer to the input image.",
             },
             {
                 "id":      "seed",
                 "label":   "Seed",
                 "type":    "int",
-                "default": -1,
-                "min":     -1,
+                "default": 42,
+                "min":     0,
                 "max":     2147483647,
+                "tooltip": "Seed for reproducibility. Click shuffle for a random seed.",
             },
         ]
