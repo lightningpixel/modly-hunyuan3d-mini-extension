@@ -3,6 +3,7 @@ Reference : https://huggingface.co/tencent/Hunyuan3D-2mini
 """
 import io
 import os
+import random
 import sys
 import tempfile
 import time
@@ -92,6 +93,8 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
         octree_res       = int(params.get("octree_resolution", 380))
         guidance_scale   = float(params.get("guidance_scale", 5.5))
         seed             = int(params.get("seed", -1))
+        if seed == -1:
+            seed = random.randint(0, 2**32 - 1)
 
         self._report(progress_cb, 5, "Removing background…")
         image = self._preprocess(image_bytes)
@@ -352,7 +355,7 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
                 "id":      "seed",
                 "label":   "Seed",
                 "type":    "int",
-                "default": 42,
+                "default": -1,
                 "min":     0,
                 "max":     2147483647,
                 "tooltip": "Seed for reproducibility. Click shuffle for a random seed.",
