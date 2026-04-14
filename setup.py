@@ -29,7 +29,8 @@ def pip(venv: Path, *args: str) -> None:
 
 def setup(python_exe: str, ext_dir: Path, gpu_sm: int) -> None:
     venv = ext_dir / "venv"
-    is_win = platform.system() == "Windows"
+    machine = platform.machine().lower()
+    is_linux_arm64 = platform.system() == "Linux" and machine in {"aarch64", "arm64"}
 
     print(f"[setup] Creating venv at {venv} …")
     subprocess.run([python_exe, "-m", "venv", str(venv)], check=True)
@@ -37,7 +38,12 @@ def setup(python_exe: str, ext_dir: Path, gpu_sm: int) -> None:
     # ------------------------------------------------------------------ #
     # PyTorch — choose version based on GPU architecture
     # ------------------------------------------------------------------ #
-    if gpu_sm >= 70:
+    if is_linux_arm64 and gpu_sm >= 70:
+        # PyTorch cu124 linux_aarch64 wheels currently stop at 2.5.1 / 0.20.1.
+        torch_index = "https://download.pytorch.org/whl/cu124"
+        torch_pkgs  = ["torch==2.5.1", "torchvision==0.20.1"]
+        print(f"[setup] GPU SM {gpu_sm}, Linux ARM64 -> PyTorch 2.5 + CUDA 12.4")
+    elif gpu_sm >= 70:
         # Volta and newer — PyTorch 2.6 + CUDA 12.4
         torch_index = "https://download.pytorch.org/whl/cu124"
         torch_pkgs  = ["torch==2.6.0", "torchvision==0.21.0"]
@@ -74,7 +80,11 @@ def setup(python_exe: str, ext_dir: Path, gpu_sm: int) -> None:
     # rembg (background removal)
     # ------------------------------------------------------------------ #
     print("[setup] Installing rembg …")
-    if gpu_sm >= 70:
+    if is_linux_arm64:
+        # rembg[gpu] pulls in onnxruntime-gpu, which has no linux_aarch64 wheel.
+        pip(venv, "install", "rembg")
+        pip(venv, "install", "onnxruntime")
+    elif gpu_sm >= 70:
         pip(venv, "install", "rembg[gpu]")
     else:
         # onnxruntime-gpu has cuDNN FE issues on Pascal — use CPU provider
