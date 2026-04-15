@@ -96,6 +96,10 @@ def install_arm64_pytorch(
     pip(
         venv,
         "install",
+        "--retries",
+        "10",
+        "--timeout",
+        "120",
         "--no-cache-dir",
         "--extra-index-url",
         extra_index_url,
