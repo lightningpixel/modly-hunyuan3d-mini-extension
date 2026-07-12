@@ -195,8 +195,9 @@ def setup(
         "pymeshlab",
         "opencv-python-headless",
         "huggingface_hub",
+        "hf_xet",  # fast Xet-backed HF downloads; without it HF falls back to slow plain HTTP
         "diffusers>=0.31.0",
-        "transformers>=4.46.0",
+        "transformers>=4.46.0,<4.54",
         "accelerate",
         "einops",
         "scipy",
