@@ -196,7 +196,7 @@ def setup(
         "opencv-python-headless",
         "huggingface_hub",
         "diffusers>=0.31.0",
-        "transformers>=4.46.0",
+        "transformers>=4.46.0,<4.54",
         "accelerate",
         "einops",
         "scipy",
