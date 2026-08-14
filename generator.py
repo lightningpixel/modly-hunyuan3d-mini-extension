@@ -2,10 +2,8 @@
 Reference : https://huggingface.co/tencent/Hunyuan3D-2mini
 """
 import io
-import os
 import random
 import sys
-import tempfile
 import time
 import threading
 import uuid
@@ -20,8 +18,6 @@ from services.generators.base import BaseGenerator, smooth_progress, GenerationC
 _HF_REPO_ID       = "tencent/Hunyuan3D-2mini"
 _SUBFOLDER        = "hunyuan3d-dit-v2-mini"
 _GITHUB_ZIP       = "https://github.com/Tencent/Hunyuan3D-2/archive/refs/heads/main.zip"
-_PAINT_HF_REPO    = "tencent/Hunyuan3D-2"
-_PAINT_SUBFOLDER  = "hunyuan3d-paint-v2-0-turbo"
 
 
 class Hunyuan3DMiniGenerator(BaseGenerator):
@@ -98,7 +94,6 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
 
         num_steps        = int(params.get("num_inference_steps", 30))
         vert_count       = int(params.get("vertex_count", 0))
-        enable_texture   = bool(params.get("enable_texture", False))
         octree_res       = int(params.get("octree_resolution", 380))
         guidance_scale   = float(params.get("guidance_scale", 5.5))
         seed             = int(params.get("seed", -1))
@@ -109,20 +104,18 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
         image = self._preprocess(image_bytes)
         self._check_cancelled(cancel_event)
 
-        shape_end = 70 if enable_texture else 82
         self._report(progress_cb, 12, "Generating 3D shape…")
         stop_evt = threading.Event()
         if progress_cb:
             t = threading.Thread(
                 target=smooth_progress,
-                args=(progress_cb, 12, shape_end, "Generating 3D shape…", stop_evt),
+                args=(progress_cb, 12, 82, "Generating 3D shape…", stop_evt),
                 daemon=True,
             )
             t.start()
 
         try:
             with torch.no_grad():
-                import torch
                 generator = torch.Generator().manual_seed(seed)
                 outputs = self._model(
                     image=image,
@@ -139,21 +132,9 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
 
         self._check_cancelled(cancel_event)
 
-        if enable_texture:
-            self._report(progress_cb, 72, "Freeing VRAM for texture model…")
-            self._model = None
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-
-            self._check_cancelled(cancel_event)
-            mesh = self._run_texture(mesh, image, progress_cb)
-            self.load()  # restore shape model so next generation doesn't crash
-        else:
-            if vert_count > 0 and hasattr(mesh, "vertices") and len(mesh.vertices) > vert_count:
-                self._report(progress_cb, 85, "Optimizing mesh…")
-                mesh = self._decimate(mesh, vert_count)
+        if vert_count > 0 and hasattr(mesh, "vertices") and len(mesh.vertices) > vert_count:
+            self._report(progress_cb, 85, "Optimizing mesh…")
+            mesh = self._decimate(mesh, vert_count)
 
         self._report(progress_cb, 96, "Exporting GLB…")
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -177,84 +158,6 @@ class Hunyuan3DMiniGenerator(BaseGenerator):
             # cuDNN/CUDA incompatibility — fall back to CPU
             session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
             return rembg.remove(img, session=session).convert("RGBA")
-
-    def _run_texture(self, mesh, image: "Image.Image", progress_cb=None):
-        import torch
-
-        self._check_texgen_extensions()
-
-        self._report(progress_cb, 73, "Preparing texture model…")
-        self._ensure_paint_weights()
-
-        self._report(progress_cb, 78, "Loading texture model…")
-        from hy3dgen.texgen import Hunyuan3DPaintPipeline
-
-        paint_dir = self.model_dir / "_paint_weights"
-        paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
-            str(paint_dir), subfolder=_PAINT_SUBFOLDER
-        )
-
-        from hy3dgen.texgen.differentiable_renderer.mesh_render import MeshRender
-        paint_pipeline.config.render_size  = 1024
-        paint_pipeline.config.texture_size = 1024
-        paint_pipeline.render = MeshRender(default_resolution=1024, texture_size=1024)
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        try:
-            image.save(tmp.name)
-            tmp.close()
-
-            self._report(progress_cb, 83, "Generating textures…")
-            with torch.no_grad():
-                result = paint_pipeline(mesh, image=tmp.name)
-        finally:
-            os.unlink(tmp.name)
-            del paint_pipeline
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-
-        return result[0] if isinstance(result, (list, tuple)) else result
-
-    def _check_texgen_extensions(self) -> None:
-        try:
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline  # noqa: F401
-        except (ImportError, OSError) as exc:
-            base = self.model_dir / "_hy3dgen" / "hy3dgen" / "texgen"
-            raise RuntimeError(
-                "C++ extensions for texture generation are not compiled.\n"
-                "Build them with:\n\n"
-                f"  cd \"{base / 'custom_rasterizer'}\"\n"
-                f"  python setup.py install\n\n"
-                f"  cd \"{base / 'differentiable_renderer'}\"\n"
-                f"  python setup.py install\n\n"
-                f"Original error: {exc}"
-            ) from exc
-
-    def _ensure_paint_weights(self) -> None:
-        paint_dir = self.model_dir / "_paint_weights"
-        if (paint_dir / _PAINT_SUBFOLDER).exists() and (paint_dir / "hunyuan3d-delight-v2-0").exists():
-            return
-
-        from huggingface_hub import snapshot_download
-        print(f"[Hunyuan3DMiniGenerator] Downloading paint model ({_PAINT_HF_REPO})…")
-        snapshot_download(
-            repo_id=_PAINT_HF_REPO,
-            local_dir=str(paint_dir),
-            ignore_patterns=[
-                "hunyuan3d-dit-v2-0/**",
-                "hunyuan3d-dit-v2-0-fast/**",
-                "hunyuan3d-dit-v2-0-turbo/**",
-                "hunyuan3d-vae-v2-0/**",
-                "hunyuan3d-vae-v2-0-turbo/**",
-                "hunyuan3d-vae-v2-0-withencoder/**",
-                "hunyuan3d-paint-v2-0/**",
-                "assets/**",
-                "*.md", "LICENSE", "NOTICE", ".gitattributes",
-            ],
-        )
-        print("[Hunyuan3DMiniGenerator] Paint model downloaded.")
 
     def _decimate(self, mesh, target_vertices: int):
         target_faces = max(4, target_vertices * 2)

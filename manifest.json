@@ -3,11 +3,11 @@
   "name": "Hunyuan3D 2 Mini",
   "type": "model",
   "source": "https://github.com/lightningpixel/modly-hunyuan3d-mini-extension",
-  "description": "Lightweight Hunyuan3D variant with 0.6B parameters. Fast generation with optional PBR texture support.",
-  "version": "1.0.1",
+  "description": "Lightweight Hunyuan3D variant with 0.6B parameters. Fast image-to-mesh generation. For textures, chain the separate Hunyuan3D Paint extension.",
+  "version": "1.1.0",
   "author": "Lightning Pixel",
   "generator_class": "Hunyuan3DMiniGenerator",
-  "tags": ["image-to-3d", "texture", "low-vram"],
+  "tags": ["image-to-3d", "low-vram"],
   "nodes": [
     {
       "id": "generate",
