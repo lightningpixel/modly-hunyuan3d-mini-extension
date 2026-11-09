@@ -84,6 +84,11 @@ def python_tag(venv: Path) -> str:
     ).strip()
 
 
+def python_minor(venv: Path) -> int:
+    """Minor version of the venv's Python 3 (python_tag gives 'cp311' -> 11)."""
+    return int(python_tag(venv)[3:])
+
+
 def install_arm64_pytorch(
     venv: Path,
     wheel_map: dict[str, dict[str, str]],
@@ -167,8 +172,13 @@ def setup(
         install_arm64_pytorch(venv, ARM64_CU124_WHEELS, "cu124", "https://download.pytorch.org/whl/cu124")
     elif gpu_sm >= 100 or cuda_version >= 128:
         torch_index = "https://download.pytorch.org/whl/cu128"
-        torch_pkgs  = ["torch==2.7.0", "torchvision==0.22.0"]
-        print(f"[setup] GPU SM {gpu_sm}, CUDA {cuda_version} -> PyTorch 2.7 + CUDA 12.8")
+        if python_minor(venv) >= 14:
+            # torch 2.7.0 ships no Python 3.14 wheels; 2.9 is the first cu128 release that does.
+            torch_pkgs = ["torch==2.9.1", "torchvision==0.24.1"]
+            print(f"[setup] GPU SM {gpu_sm}, CUDA {cuda_version}, Python 3.14+ -> PyTorch 2.9 + CUDA 12.8")
+        else:
+            torch_pkgs = ["torch==2.7.0", "torchvision==0.22.0"]
+            print(f"[setup] GPU SM {gpu_sm}, CUDA {cuda_version} -> PyTorch 2.7 + CUDA 12.8")
         print("[setup] Installing PyTorch …")
         pip(venv, "install", *torch_pkgs, "--index-url", torch_index)
     elif gpu_sm >= 70:
